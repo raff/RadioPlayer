@@ -165,8 +165,10 @@ class NowPlaying: NSObject, ObservableObject, AVPlayerItemMetadataOutputPushDele
     }
 
     private func update(title: String) {
-        songTitle = title
-        onSongChanged?(title)
+        if songTitle != title {
+            songTitle = title
+            onSongChanged?(title)
+        }
     }
 }
 
