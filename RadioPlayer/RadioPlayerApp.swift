@@ -13,9 +13,14 @@ import UserNotifications
 import TOMLDecoder
 
 class Station : Codable {
-    let title: String
-    let url: String
+    var title: String
+    var url: String
     var songTitle: String = ""
+
+    init(title: String, url: String) {
+        self.title = title
+        self.url = url
+    }
 
     private enum CodingKeys: String, CodingKey {
         case title, url
@@ -32,8 +37,33 @@ class Config : Codable {
     }
 }
 
+// Returns the writable config path in Application Support, copying the bundle default on first launch.
+func configFileURL() -> URL? {
+    let fm = FileManager.default
+    guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        return Bundle.main.url(forResource: "radio", withExtension: "conf")
+    }
+
+    let appDir = appSupport.appendingPathComponent("RadioPlayer")
+    let configURL = appDir.appendingPathComponent("radio.conf")
+
+    if !fm.fileExists(atPath: configURL.path) {
+        do {
+            try fm.createDirectory(at: appDir, withIntermediateDirectories: true)
+            if let bundleURL = Bundle.main.url(forResource: "radio", withExtension: "conf") {
+                try fm.copyItem(at: bundleURL, to: configURL)
+            }
+        } catch {
+            NSLog("Failed to initialise config in Application Support: %@", error.localizedDescription)
+            return Bundle.main.url(forResource: "radio", withExtension: "conf")
+        }
+    }
+
+    return configURL
+}
+
 func loadConfig() -> Config? {
-    guard let url = Bundle.main.url(forResource: "radio", withExtension: "conf") else {
+    guard let url = configFileURL() else {
         NSLog("Configuration file not found: radio.conf")
         return nil
     }
@@ -60,7 +90,7 @@ class Observer: NSObject {
 }
 
 func editConfig(doneHandler: (() -> Void)?) {
-    guard let url = Bundle.main.url(forResource: "radio", withExtension: "conf") else {
+    guard let url = configFileURL() else {
         NSLog("Configuration file not found: radio.conf")
         return
     }
@@ -172,6 +202,31 @@ class NowPlaying: NSObject, ObservableObject, AVPlayerItemMetadataOutputPushDele
     }
 }
 
+// Fetches ICY response headers to detect the station name.
+// Cancels the transfer immediately after receiving headers to avoid buffering stream data.
+class ICYHeaderDelegate: NSObject, URLSessionDataDelegate {
+    var task: URLSessionDataTask?
+    private let onName: (String?) -> Void
+
+    init(_ onName: @escaping (String?) -> Void) {
+        self.onName = onName
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        var name: String? = nil
+        if let http = response as? HTTPURLResponse,
+           let icyName = http.allHeaderFields["icy-name"] as? String, !icyName.isEmpty {
+            name = icyName
+        }
+        DispatchQueue.main.async { self.onName(name) }
+        completionHandler(.cancel)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // Cancellation after header receipt is expected; ignore
+    }
+}
+
 @available(macOS 13.0, *)
 @main
 struct RadioPlayerApp: App {
@@ -182,6 +237,8 @@ struct RadioPlayerApp: App {
 
     @AppStorage("current-station") var current : Int = -1
     @State private var ext = ""
+    @State private var adHocStation: Station? = nil
+    @State private var adHocTitle: String = ""
 
     init() {
         let np = NowPlaying()
@@ -212,6 +269,8 @@ struct RadioPlayerApp: App {
 
     private func playerSelect(index: Int, play: Bool) {
         player.currentItem?.remove(nowPlaying.output)
+        adHocStation = nil
+        adHocTitle = ""
 
         if index < 0 || index > config!.station.count || config?.station[index].url == "" {
             player.replaceCurrentItem(with: nil)
@@ -232,7 +291,6 @@ struct RadioPlayerApp: App {
         item.add(nowPlaying.output)
         player.replaceCurrentItem(with: item)
 
-        let npRef = npCenter
         nowPlaying.onSongChanged = { songTitle in
             station.songTitle = songTitle
             updateNpInfo(station: station, songTitle: songTitle)
@@ -241,6 +299,129 @@ struct RadioPlayerApp: App {
 
         if play {
             playerPlay()
+        }
+    }
+
+    private func playAdHoc(urlString: String, name: String) {
+        guard let url = URL(string: urlString) else { return }
+
+        player.currentItem?.remove(nowPlaying.output)
+
+        let station = Station(title: name.isEmpty ? urlString : name, url: urlString)
+        adHocStation = station
+        adHocTitle = station.title
+        current = -1
+
+        updateNpInfo(station: station)
+        nowPlaying.reset()
+
+        let item = AVPlayerItem(url: url)
+        item.add(nowPlaying.output)
+        player.replaceCurrentItem(with: item)
+
+        nowPlaying.onSongChanged = { songTitle in
+            station.songTitle = songTitle
+            updateNpInfo(station: station, songTitle: songTitle)
+            notify(title: station.title, message: songTitle)
+        }
+
+        playerPlay()
+
+        // Try to get the station name from ICY headers if none was given
+        if name.isEmpty {
+            fetchStationName(urlString: urlString) { detected in
+                if let n = detected, !n.isEmpty {
+                    adHocTitle = n
+                    station.title = n
+                    updateNpInfo(station: station)
+                }
+            }
+        }
+    }
+
+    private func fetchStationName(urlString: String, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: urlString) else { completion(nil); return }
+
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        request.setValue("1", forHTTPHeaderField: "Icy-MetaData")
+
+        let delegate = ICYHeaderDelegate(completion)
+        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        delegate.task = session.dataTask(with: request)
+        delegate.task?.resume()
+    }
+
+    private func showPlayURLDialog() {
+        let alert = NSAlert()
+        alert.messageText = "Play Radio Station"
+        alert.informativeText = "Enter the stream URL:"
+        alert.addButton(withTitle: "Play")
+        alert.addButton(withTitle: "Cancel")
+
+        let urlField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        urlField.placeholderString = "https://stream.example.com/radio"
+        alert.accessoryView = urlField
+        alert.window.initialFirstResponder = urlField
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let urlString = urlField.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !urlString.isEmpty else { return }
+            playAdHoc(urlString: urlString, name: "")
+        }
+    }
+
+    private func showAddToConfigDialog() {
+        guard let station = adHocStation else { return }
+
+        let suggestedName = adHocTitle == station.url ? "" : adHocTitle
+
+        let alert = NSAlert()
+        alert.messageText = "Add Station to Configuration"
+        alert.informativeText = station.url
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        nameField.stringValue = suggestedName
+        nameField.placeholderString = "Station name"
+        alert.accessoryView = nameField
+        alert.window.initialFirstResponder = nameField
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            adHocTitle = name
+            appendToConfig(title: name, url: station.url)
+            // Reload config list without stopping playback
+            if let updated = loadConfig() {
+                config!.update(c: updated)
+            }
+        }
+    }
+
+    private func appendToConfig(title: String, url: String) {
+        guard let fileUrl = configFileURL() else {
+            NSLog("Configuration file not found")
+            return
+        }
+
+        let escapedTitle = title
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let entry = "\n[[station]]\ntitle = \"\(escapedTitle)\"\nurl = \"\(url)\"\n"
+
+        do {
+            let handle = try FileHandle(forWritingTo: fileUrl)
+            defer { handle.closeFile() }
+            handle.seekToEndOfFile()
+            handle.write(entry.data(using: .utf8)!)
+            NSLog("Station '%@' added to config", title)
+        } catch {
+            NSLog("Failed to write to radio.conf: %@", error.localizedDescription)
         }
     }
 
@@ -275,11 +456,13 @@ struct RadioPlayerApp: App {
     }
 
     private func currentTitle() -> String {
+        if adHocStation != nil && current < 0 {
+            return adHocTitle
+        }
         let curr = current
         if curr < 0 || curr >= config!.station.count {
             return ""
         }
-
         return config!.station[curr].title
     }
 
@@ -294,7 +477,7 @@ struct RadioPlayerApp: App {
         }
         commandCenter.playCommand.addTarget { (event) -> MPRemoteCommandHandlerStatus in
             NSLog("remote play")
-            if current < 0 {
+            if player.currentItem == nil && current < 0 {
                 playNext()
             } else {
                 playerPlay()
@@ -307,12 +490,11 @@ struct RadioPlayerApp: App {
                 notify(title: config!.title, message: "Pause " + currentTitle())
                 playerPause()
             } else {
-                if current < 0 {
+                if player.currentItem == nil && current < 0 {
                     playNext()
                 } else {
                     playerPlay()
                 }
-
                 notify(title: config!.title, message: "Play " + currentTitle())
             }
             return .success
@@ -325,7 +507,7 @@ struct RadioPlayerApp: App {
             return .success
         }
         commandCenter.previousTrackCommand.addTarget { (event) -> MPRemoteCommandHandlerStatus in
-            NSLog("remote next")
+            NSLog("remote prev")
             let index = selectNext(forward: false)
             playerSelect(index: index, play: true)
             notify(title: config!.title, message: "Play " + currentTitle())
@@ -364,7 +546,7 @@ struct RadioPlayerApp: App {
 
             Button("Play/Pause") {
                 if player.timeControlStatus == .paused {
-                    if current < 0 {
+                    if player.currentItem == nil && adHocStation == nil && current < 0 {
                         playNext()
                     } else {
                         playerPlay()
@@ -409,14 +591,28 @@ struct RadioPlayerApp: App {
                 }
             }
 
+            if adHocStation != nil {
+                Divider()
+                Label(adHocTitle, systemImage: "antenna.radiowaves.left.and.right")
+                    .foregroundStyle(.secondary)
+                    .disabled(true)
+                Button("Add to Configuration...") {
+                    showAddToConfigDialog()
+                }
+            }
+
             Divider()
+
+            Button("Play URL...") {
+                showPlayURLDialog()
+            }.keyboardShortcut("U")
 
             Menu("Settings...") {
                 Button("Edit configuration") {
                     editConfig(doneHandler: reloadConfig)
                 }
 
-                Button("Reload ") {
+                Button("Reload") {
                     reloadConfig()
                 }
             }
