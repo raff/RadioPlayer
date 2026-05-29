@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		C51EE102290267A800CE7FF2 /* TOMLDecoder in Frameworks */ = {isa = PBXBuildFile; productRef = C51EE101290267A800CE7FF2 /* TOMLDecoder */; };
 		C56F10F628FE2A0A00119143 /* RadioPlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C56F10F528FE2A0A00119143 /* RadioPlayerApp.swift */; };
+		AA00000200000000000001A0 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000100000000000001A0 /* Models.swift */; };
+		AA00000400000000000001A0 /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000300000000000001A0 /* ConfigStore.swift */; };
+		AA00000600000000000001A0 /* NowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000500000000000001A0 /* NowPlaying.swift */; };
 		C56F10FA28FE2A0C00119143 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C56F10F928FE2A0C00119143 /* Assets.xcassets */; };
 		C56F10FD28FE2A0C00119143 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C56F10FC28FE2A0C00119143 /* Preview Assets.xcassets */; };
 		C5E81D0F28FE65ED0029C8CA /* radio.conf in Resources */ = {isa = PBXBuildFile; fileRef = C5E81D0E28FE65ED0029C8CA /* radio.conf */; };
@@ -17,6 +20,9 @@
 /* Begin PBXFileReference section */
 		C56F10F228FE2A0A00119143 /* RadioPlayer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RadioPlayer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C56F10F528FE2A0A00119143 /* RadioPlayerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioPlayerApp.swift; sourceTree = "<group>"; };
+		AA00000100000000000001A0 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AA00000300000000000001A0 /* ConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
+		AA00000500000000000001A0 /* NowPlaying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlaying.swift; sourceTree = "<group>"; };
 		C56F10F928FE2A0C00119143 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C56F10FC28FE2A0C00119143 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		C56F10FE28FE2A0C00119143 /* RadioPlayer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RadioPlayer.entitlements; sourceTree = "<group>"; };
@@ -65,6 +71,9 @@
 			children = (
 				C5FAE541290F68A3001CC4F6 /* Info.plist */,
 				C56F10F528FE2A0A00119143 /* RadioPlayerApp.swift */,
+				AA00000100000000000001A0 /* Models.swift */,
+				AA00000300000000000001A0 /* ConfigStore.swift */,
+				AA00000500000000000001A0 /* NowPlaying.swift */,
 				C56F10F928FE2A0C00119143 /* Assets.xcassets */,
 				C56F10FE28FE2A0C00119143 /* RadioPlayer.entitlements */,
 				C56F10FB28FE2A0C00119143 /* Preview Content */,
@@ -159,6 +168,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				C56F10F628FE2A0A00119143 /* RadioPlayerApp.swift in Sources */,
+				AA00000200000000000001A0 /* Models.swift in Sources */,
+				AA00000400000000000001A0 /* ConfigStore.swift in Sources */,
+				AA00000600000000000001A0 /* NowPlaying.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
